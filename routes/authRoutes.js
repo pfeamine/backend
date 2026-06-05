@@ -13,7 +13,7 @@ const JWT_SECRET = process.env.JWT_SECRET || 'velodya_cyan_ev_charging_station_s
 // Helper: Sign JWT Token
 const generateToken = (user) => {
   return jwt.sign(
-    { id: user.id, authorization_number: user.authorization_number, role: user.role },
+    { id: user.id, rfid: user.rfid, role: user.role },
     JWT_SECRET,
     { expiresIn: '7d' }
   );
@@ -25,9 +25,8 @@ const generateToken = (user) => {
 router.post(
   '/register',
   [
-    body('authorization_number')
-      .isNumeric().withMessage('Authorization number must contain only numeric digits.')
-      .isLength({ min: 8, max: 8 }).withMessage('Authorization number must be exactly 8 digits.'),
+    body('rfid')
+      .matches(/^[0-9A-Fa-f]{8}$/).withMessage('RFID must be exactly 8 characters containing only numbers and letters A-F.'),
     body('name').trim().notEmpty().withMessage('Name is required.'),
     body('email').isEmail().withMessage('Please provide a valid email address.').normalizeEmail(),
     body('role').optional().isIn(['user', 'admin']).withMessage('Invalid role type.')
@@ -38,18 +37,19 @@ router.post(
       return res.status(400).json({ errors: errors.array().map(e => e.msg) });
     }
 
-    const { authorization_number, name, email, role } = req.body;
+    const { rfid, name, email, role } = req.body;
+    const upperRfid = rfid.toUpperCase();
 
     try {
       // Check if user already exists
-      const existingUser = await db.getUserByAuthNumber(authorization_number);
+      const existingUser = await db.getUserByRfid(upperRfid);
       if (existingUser) {
-        return res.status(400).json({ error: 'This authorization number is already registered.' });
+        return res.status(400).json({ error: 'This RFID is already registered.' });
       }
 
       // Create new user
       const user = await db.createUser({
-        authorization_number,
+        rfid: upperRfid,
         name,
         email,
         role: role || 'user'
@@ -62,7 +62,7 @@ router.post(
         token,
         user: {
           id: user.id,
-          authorization_number: user.authorization_number,
+          rfid: user.rfid,
           name: user.name,
           email: user.email,
           role: user.role,
@@ -82,9 +82,9 @@ router.post(
 router.post(
   '/login',
   [
-    body('authorization_number')
-      .isNumeric().withMessage('Authorization number must contain only numeric digits.')
-      .isLength({ min: 8, max: 8 }).withMessage('Authorization number must be exactly 8 digits.')
+    body('rfid')
+      .matches(/^[0-9A-Fa-f]{8}$/).withMessage('RFID must be exactly 8 characters containing only numbers and letters A-F.'),
+    body('email').isEmail().withMessage('Please provide a valid email address.').normalizeEmail()
   ],
   async (req, res) => {
     const errors = validationResult(req);
@@ -92,13 +92,14 @@ router.post(
       return res.status(400).json({ errors: errors.array().map(e => e.msg) });
     }
 
-    const { authorization_number } = req.body;
+    const { rfid, email } = req.body;
+    const upperRfid = rfid.toUpperCase();
 
     try {
-      // Check for user
-      const user = await db.getUserByAuthNumber(authorization_number);
+      // Check for user by RFID and email
+      const user = await db.getUserByRfidAndEmail(upperRfid, email);
       if (!user) {
-        return res.status(401).json({ error: 'Invalid authorization number.' });
+        return res.status(401).json({ error: 'Invalid RFID or email address.' });
       }
 
       // Check if account is enabled
@@ -114,7 +115,7 @@ router.post(
         token,
         user: {
           id: user.id,
-          authorization_number: user.authorization_number,
+          rfid: user.rfid,
           name: user.name,
           email: user.email,
           role: user.role,
@@ -135,7 +136,7 @@ router.get('/me', authMiddleware, async (req, res) => {
   res.json({
     user: {
       id: req.user.id,
-      authorization_number: req.user.authorization_number,
+      rfid: req.user.rfid,
       name: req.user.name,
       email: req.user.email,
       role: req.user.role,

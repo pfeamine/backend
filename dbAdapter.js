@@ -38,7 +38,7 @@ const inMemoryDb = {
   users: [
     {
       id: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
-      authorization_number: '12345678',
+      rfid: '12345678',
       name: 'Admin Supervisor',
       email: 'admin@velodya.ev',
       role: 'admin',
@@ -47,7 +47,7 @@ const inMemoryDb = {
     },
     {
       id: 'b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a22',
-      authorization_number: '87654321',
+      rfid: '87654321',
       name: 'John Doe',
       email: 'john.doe@example.com',
       role: 'user',
@@ -84,17 +84,33 @@ inMemoryDb.reservations.push({
 // Adapter Database Methods
 export const db = {
   // --- USERS ---
-  async getUserByAuthNumber(authNumber) {
+  async getUserByRfid(rfid) {
     if (isSupabaseConfigured) {
       const { data, error } = await supabase
         .from('users')
         .select('*')
-        .eq('authorization_number', authNumber)
+        .eq('rfid', rfid)
         .maybeSingle();
       if (error) throw error;
       return data;
     } else {
-      return inMemoryDb.users.find(u => u.authorization_number === authNumber) || null;
+      return inMemoryDb.users.find(u => u.rfid === rfid) || null;
+    }
+  },
+
+  async getUserByRfidAndEmail(rfid, email) {
+    const cleanEmail = email.toLowerCase().trim();
+    if (isSupabaseConfigured) {
+      const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .eq('rfid', rfid)
+        .eq('email', cleanEmail)
+        .maybeSingle();
+      if (error) throw error;
+      return data;
+    } else {
+      return inMemoryDb.users.find(u => u.rfid === rfid && u.email.toLowerCase().trim() === cleanEmail) || null;
     }
   },
 
@@ -112,11 +128,12 @@ export const db = {
     }
   },
 
-  async createUser({ authorization_number, name, email, role = 'user' }) {
+  async createUser({ rfid, name, email, role = 'user' }) {
+    const cleanEmail = email.toLowerCase().trim();
     if (isSupabaseConfigured) {
       const { data, error } = await supabase
         .from('users')
-        .insert([{ authorization_number, name, email, role, is_enabled: true }])
+        .insert([{ rfid, name, email: cleanEmail, role, is_enabled: true }])
         .select()
         .single();
       if (error) throw error;
@@ -124,9 +141,9 @@ export const db = {
     } else {
       const newUser = {
         id: generateMockUUID(),
-        authorization_number,
+        rfid,
         name,
-        email,
+        email: cleanEmail,
         role,
         is_enabled: true,
         created_at: new Date().toISOString()
@@ -206,7 +223,7 @@ export const db = {
         .from('reservations')
         .select(`
           *,
-          users:user_id (id, name, email, authorization_number),
+          users:user_id (id, name, email, rfid),
           charging_spots:charging_spot_id (id, spot_number)
         `)
         .order('start_time', { ascending: true });
@@ -218,7 +235,7 @@ export const db = {
         const spot = inMemoryDb.charging_spots.find(s => s.id === res.charging_spot_id);
         return {
           ...res,
-          users: user ? { id: user.id, name: user.name, email: user.email, authorization_number: user.authorization_number } : null,
+          users: user ? { id: user.id, name: user.name, email: user.email, rfid: user.rfid } : null,
           charging_spots: spot ? { id: spot.id, spot_number: spot.spot_number } : null
         };
       });
